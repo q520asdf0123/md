@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>Markdown & LaTeX Renderer</title>
+  <!-- 引入样式 -->
+  <link rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/github.min.css">
+  <style>
+    body {
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      font-family: Arial, sans-serif;
+    }
+    #toolbar {
+      display: flex;
+      align-items: center;
+      padding: 10px;
+      background-color: #f5f5f5;
+      border-bottom: 1px solid #ddd;
+    }
+    #toggle-editor {
+      padding: 6px 12px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    #container {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+    #markdown-input {
+      width: 50%;
+      padding: 15px;
+      border: none;
+      outline: none;
+      resize: none;
+      font-size: 16px;
+      box-sizing: border-box;
+      border-right: 1px solid #ccc;
+      overflow: auto;
+    }
+    #rendered-content {
+      flex: 1;
+      padding: 15px;
+      overflow-x: auto; /* 允许水平滚动 */
+      overflow-y: auto;
+      background-color: #ffffff;
+      box-sizing: border-box;
+    }
+    /* 美化渲染后的Markdown内容 */
+    #rendered-content h1 {
+      font-size: 2em;
+      margin-bottom: 0.5em;
+      border-bottom: 2px solid #eee;
+      padding-bottom: 0.3em;
+    }
+    #rendered-content h2 {
+      font-size: 1.75em;
+      margin-bottom: 0.5em;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 0.3em;
+    }
+    #rendered-content p {
+      line-height: 1.6;
+      margin: 0.8em 0;
+    }
+    #rendered-content blockquote {
+      border-left: 4px solid #ddd;
+      padding-left: 1em;
+      color: #666;
+      margin: 1em 0;
+    }
+    #rendered-content code {
+      background-color: #f8f8f8;
+      padding: 2px 4px;
+      font-size: 90%;
+      border-radius: 4px;
+    }
+    #rendered-content pre code {
+      background-color: transparent;
+      padding: 0;
+    }
+    #rendered-content pre {
+      background-color: #f8f8f8;
+      padding: 1em;
+      overflow: auto;
+      border-radius: 4px;
+    }
+    #rendered-content ul, #rendered-content ol {
+      margin: 0.8em 0;
+      padding-left: 1.5em;
+    }
+    #rendered-content table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 1em 0;
+    }
+    #rendered-content table th,
+    #rendered-content table td {
+      border: 1px solid #ddd;
+      padding: 0.5em 1em;
+      text-align: left;
+    }
+    /* 调整数学公式的显示，允许部分公式超出时滚动 */
+    .mathjax { 
+      overflow-x: auto; 
+    }
+    /* 隐藏编辑框时的样式 */
+    .hidden {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <!-- 工具栏 -->
+  <div id="toolbar">
+    <button id="toggle-editor">显示编辑框</button>
+  </div>
+  <!-- 容器 -->
+  <div id="container">
+    <!-- 输入区域 -->
+    <textarea id="markdown-input" placeholder="在此输入Markdown文本，包括LaTeX公式"></textarea>
+    <!-- 渲染区域 -->
+    <div id="rendered-content"></div>
+  </div>
+
+  <!-- MathJax配置 -->
+  <script>
+    window.MathJax = {
+      tex: {
+        packages: {'[+]': ['ams']}, // 加载ams包
+        inlineMath: [['$', '$'], ['\\(', '\\)']],
+        displayMath: [['$$', '$$'], ['\\[', '\\]']],
+      },
+      svg: { fontCache: 'global' }
+    };
+  </script>
+  <!-- 加载MathJax脚本 -->
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" async></script>
+
+  <!-- 引入脚本 -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+  <script>
+    hljs.highlightAll();
+  </script>
+
+  <script>
+    const inputArea = document.getElementById('markdown-input');
+    const outputDiv = document.getElementById('rendered-content');
+    const toggleButton = document.getElementById('toggle-editor');
+    const container = document.getElementById('container');
+
+    // 初始情况下隐藏编辑框
+    inputArea.classList.add('hidden');
+    toggleButton.textContent = '显示编辑框';
+
+    // 预处理函数，将LaTeX公式自动包裹在$$中
+    function preprocessLaTeX(text) {
+      // 匹配未被$$包裹的LaTeX公式，简化正则表达式示例
+      // 注意：此正则表达式可能无法覆盖所有情况，根据需求调整
+      // 处理 \[ \] 包裹的公式
+      text = text.replace(/\\\[(.+?)\\\]/gs, function(match, p1) {
+        return '$$' + p1 + '$$';
+      });
+      // 处理 $$ $$ 包裹但未正确识别的公式
+      text = text.replace(/\$\$([\s\S]+?)\$\$/g, function(match, p1) {
+        return '$$' + p1 + '$$';
+      });
+      // 返回处理后的文本
+      return text;
+    }
+
+    marked.setOptions({
+      highlight: function(code, lang) {
+        const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+        return hljs.highlight(code, { language }).value;
+      },
+      breaks: true
+    });
+
+    function renderMarkdown() {
+      let markdownText = inputArea.value;
+
+      // 预处理LaTeX公式
+      markdownText = preprocessLaTeX(markdownText);
+
+      // 使用marked解析Markdown
+      let htmlContent = marked.parse(markdownText);
+
+      // 更新渲染区域的内容
+      outputDiv.innerHTML = htmlContent;
+
+      // 让MathJax重新渲染公式
+      MathJax.typesetPromise();
+
+      // 同步滚动位置
+      syncScroll();
+    }
+
+    // 实时预览同步滚动
+    function syncScroll() {
+      // 获取编辑区域和渲染区域的滚动高度比例
+      const inputScrollTop = inputArea.scrollTop;
+      const inputScrollHeight = inputArea.scrollHeight - inputArea.clientHeight;
+      const scrollRatio = inputScrollTop / inputScrollHeight;
+
+      // 计算渲染区域的滚动位置
+      const outputScrollHeight = outputDiv.scrollHeight - outputDiv.clientHeight;
+      const outputScrollTop = scrollRatio * outputScrollHeight;
+
+      // 设置渲染区域的滚动位置
+      outputDiv.scrollTop = outputScrollTop;
+    }
+
+    // 绑定事件
+    inputArea.addEventListener('input', renderMarkdown);
+    inputArea.addEventListener('scroll', syncScroll);
+    toggleButton.addEventListener('click', function() {
+      inputArea.classList.toggle('hidden');
+      if (inputArea.classList.contains('hidden')) {
+        toggleButton.textContent = '显示编辑框';
+      } else {
+        toggleButton.textContent = '隐藏编辑框';
+      }
+    });
+
+    // 初始化渲染
+    renderMarkdown();
+  </script>
+</body>
+</html>
